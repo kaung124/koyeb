@@ -7,8 +7,35 @@ import time
 
 app = Flask(__name__)
 
-# File to store the data
+# Files for data storage
 DATA_FILE = "datas.txt"
+STATUS_FILE = "status.txt"
+
+API_URL = "https://apis.mytel.com.mm/network-test/v3/submit"
+
+OPERATORS = {
+    "ATOM": "12be4567-e89b-12d3-a456-426655444212",
+    "MYTEL": "123e4567-e89b-12d3-a456-426655440000",
+    "OOREDOO": "a21e4567-e89b-12d3-a456-a14132143535",
+    "MPT": "12312567-e89b-12d3-a456-124324125ab1"
+}
+
+def update_status(total, success, fail):
+    status_data = {"total": total, "success": success, "fail": fail}
+    with open(STATUS_FILE, "w") as file:
+        json.dump(status_data, file)
+
+@app.route('/get_status', methods=['GET'])
+def get_status():
+    try:
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r") as file:
+                status_data = json.load(file)
+            return jsonify(status_data), 200
+        else:
+            return jsonify({"total": 0, "success": 0, "fail": 0}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/send_data', methods=['POST'])
 def send_data():
@@ -41,7 +68,6 @@ def send_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/get_data', methods=['GET'])
 def get_data():
     try:
@@ -59,17 +85,7 @@ def get_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-API_URL = "https://apis.mytel.com.mm/network-test/v3/submit"
-
-OPERATORS = {
-    "ATOM": "12be4567-e89b-12d3-a456-426655444212",
-    "MYTEL": "123e4567-e89b-12d3-a456-426655440000",
-    "OOREDOO": "a21e4567-e89b-12d3-a456-a14132143535",
-    "MPT": "12312567-e89b-12d3-a456-124324125ab1"
-}
-
-def send_request(record, operator, request_id):
+def send_request(record, operator, request_id, status_counts):
     try:
         headers = {
             "Authorization": f"Bearer {record['token']}"
@@ -100,15 +116,22 @@ def send_request(record, operator, request_id):
         print("Status Code:", response.status_code)
         print("Response:", json.dumps(response_data, indent=4))
 
+        status_counts["total"] += 1
+
         if response_data.get("message") == "SUCCESS":
+            status_counts["success"] += 1
             print(f"SUCCESS for {record['phNo']} on {operator}")
         else:
+            status_counts["fail"] += 1
             print(f"Failed for {record['phNo']} on {operator}: {response_data}")
 
     except Exception as e:
+        status_counts["fail"] += 1
         print(f"Error sending request for {record['phNo']} on {operator}: {e}")
 
 def auto_send():
+    status_counts = {"total": 0, "success": 0, "fail": 0}
+
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r') as file:
@@ -118,12 +141,17 @@ def auto_send():
                 records = json.loads(f"[{raw_data}]")
                 for record in records:
                     for operator, request_id in OPERATORS.items():
-                        send_request(record, operator, request_id)
+                        send_request(record, operator, request_id, status_counts)
                         time.sleep(5)  # Delay between requests
+
+                # Update status file after sending all requests
+                update_status(status_counts["total"], status_counts["success"], status_counts["fail"])
+
             else:
                 print("No data to send.")
         else:
             print(f"Data file {DATA_FILE} not found.")
+
     except Exception as e:
         print(f"Error in auto_send: {e}")
 
@@ -138,3 +166,4 @@ def start_send():
 if __name__ == '__main__':
     print("Server started.")
     app.run()
+    

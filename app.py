@@ -151,7 +151,7 @@ def auto_send():
 
 # Schedule the job for every day at 11 PM Myanmar Time
 def schedule_daily_job():
-    schedule.every().day.at("08:05").do(auto_send)
+    schedule.every().day.at("01:45").do(auto_send)
     print("Daily job scheduled for 11:33 PM Myanmar Time.")
     while True:
         schedule.run_pending()

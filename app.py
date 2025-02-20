@@ -10,6 +10,10 @@ app = Flask(__name__)
 # Files for data storage
 DATA_FILE = "datas.txt"
 STATUS_FILE = "status.txt"
+APC_FILE = "status_APC.txt"
+
+
+APC_URL = "https://apis.mytel.com.mm/loyalty/api/v3.1/pack/exchange"
 
 API_URL = "https://apis.mytel.com.mm/network-test/v3/submit"
 
@@ -20,20 +24,25 @@ OPERATORS = {
     "MPT": "12312567-e89b-12d3-a456-124324125ab1"
 }
 
-def update_status(total, success, fail):
-    status_data = {"total": total, "success": success, "fail": fail}
+def update_status(total, success, fail, process):
+    status_data = {"total": total, "success": success, "fail": fail, "process":process}
     with open(STATUS_FILE, "w") as file:
         json.dump(status_data, file)
-
-@app.route('/get_status', methods=['GET'])
-def get_status():
+        
+def apc_update_status(total, success, fail,process):
+    status_data = {"total": total, "success": success, "fail": fail,"process":process}
+    with open(APC_FILE, "w") as file:
+        json.dump(status_data, file)
+        
+@app.route('/get_statusapc', methods=['GET'])
+def get_statusapc():
     try:
-        if os.path.exists(STATUS_FILE):
-            with open(STATUS_FILE, "r") as file:
+        if os.path.exists(APC_FILE):
+            with open(APC_FILE, "r") as file:
                 status_data = json.load(file)
             return jsonify(status_data), 200
         else:
-            return jsonify({"total": 0, "success": 0, "fail": 0}), 200
+            return jsonify({"total": 0, "success": 0, "fail": 0, "process":"EMPTY"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -67,7 +76,65 @@ def send_data():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+        
+def send_apcrequest(record, status_counts):
+    try:
+        headers = {
+            "Authorization": f"Bearer {record['token']}"
+        }
+        body = {
+            "requestId": "36d44ed72a2d4cea",  # Unique request ID
+            "requestTime": int(time.time() * 1000),  # Current timestamp in milliseconds
+            "msisdn": f"+95{record['phNo']}",
+            "rewardCode": "DATA_40MB"
+        }
+        print(f"Header is \n {headers} \n body is \n {body} \n")
+        print(f"Sending request for {record['phNo']}")
+        response = requests.post(APC_URL, headers=headers, json=body)
+        response_data = response.json()
 
+        print("Status Code:", response.status_code)
+        print("Response:", json.dumps(response_data, indent=4))
+
+        status_counts["total"] += 1
+
+        if response_data.get("message") == "Your request is success":
+            status_counts["success"] += 1
+            print(f"SUCCESS for {record['phNo']}")
+        else:
+            status_counts["fail"] += 1
+            print(f"Failed for {record['phNo']}: {response_data}")
+
+    except Exception as e:
+        status_counts["fail"] += 1
+        print(f"Error sending request for {record['phNo']}")
+
+def point_auto():
+    status_counts = {"total": 0, "success": 0, "fail": 0, "process":"Auto 40MB Exchange"}
+
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as file:
+                raw_data = file.read().strip()
+
+            if raw_data:
+                records = json.loads(f"[{raw_data}]")
+                for record in records:
+                    
+                        send_apcrequest(record, status_counts)
+                        time.sleep(5)  # Delay between requests
+
+                # Update status file after sending all requests
+                apc_update_status(status_counts["total"], status_counts["success"], status_counts["fail"],status_counts["process"])
+
+            else:
+                print("No data to send.")
+        else:
+            print(f"Data file {DATA_FILE} not found.")
+
+    except Exception as e:
+        print(f"Error in point_auto: {e}")
+        
 @app.route('/get_data', methods=['GET'])
 def get_data():
     try:
@@ -85,6 +152,27 @@ def get_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/start_APC', methods=['POST'])
+def start_apc():
+    try:
+        threading.Thread(target=point_auto, daemon=True).start()
+        return jsonify({"message": "Point-Exchange (40MB) Auto Process started!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_status', methods=['GET'])
+def get_status():
+    try:
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r") as file:
+                status_data = json.load(file)
+            return jsonify(status_data), 200
+        else:
+            return jsonify({"total": 0, "success": 0, "fail": 0, "process":"N.T"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def send_request(record, operator, request_id, status_counts):
     try:
         headers = {
@@ -93,7 +181,7 @@ def send_request(record, operator, request_id, status_counts):
         body = {
             "cellId": "30816289",
             "deviceModel": "M2007J22C",
-            "downloadSpeed": 40.2,
+            "downloadSpeed": 140.2,
             "enb": "120376",
             "latency": 90.375,
             "latitude": "16.9264438",
@@ -129,8 +217,8 @@ def send_request(record, operator, request_id, status_counts):
         status_counts["fail"] += 1
         print(f"Error sending request for {record['phNo']} on {operator}: {e}")
 
-def auto_send():
-    status_counts = {"total": 0, "success": 0, "fail": 0}
+def auto_NT():
+    status_counts = {"total": 0, "success": 0, "fail": 0,"process":"N.T"}
 
     try:
         if os.path.exists(DATA_FILE):
@@ -145,7 +233,7 @@ def auto_send():
                         time.sleep(5)  # Delay between requests
 
                 # Update status file after sending all requests
-                update_status(status_counts["total"], status_counts["success"], status_counts["fail"])
+                update_status(status_counts["total"], status_counts["success"], status_counts["fail"],status_counts["process"])
 
             else:
                 print("No data to send.")
@@ -155,15 +243,16 @@ def auto_send():
     except Exception as e:
         print(f"Error in auto_send: {e}")
 
-@app.route('/start_send', methods=['POST'])
-def start_send():
+@app.route('/start_NTA', methods=['POST'])
+def start_NTA():
     try:
-        threading.Thread(target=auto_send, daemon=True).start()
+        threading.Thread(target=auto_NT, daemon=True).start()
         return jsonify({"message": "Auto-send started!"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     print("Server started.")
-    app.run()
+    app.run(debug=True)
     
+

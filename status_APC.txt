@@ -1,1 +1,1 @@
-{"total": 0, "success": 0, "fail": 0, "process": "Auto 40MB Exchange"}
+{"total": 0, "success": 0, "fail": 0, "process": "Auto 40 Ex"}

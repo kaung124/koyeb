@@ -110,7 +110,7 @@ def send_apcrequest(record, status_counts):
         print(f"Error sending request for {record['phNo']}")
 
 def point_auto():
-    status_counts = {"total": 0, "success": 0, "fail": 0, "process":"Auto 40MB Exchange"}
+    status_counts = {"total": 0, "success": 0, "fail": 0, "process":"Auto 40 EX"}
 
     try:
         if os.path.exists(DATA_FILE):
